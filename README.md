@@ -6,9 +6,9 @@
 
 - 首页：月历、训练日期红点、月度次数、打卡热力图。
 - 记录：按日期新增或编辑多个动作，记录组数、次数、重量和时长。
-- 日记：记录体重、训练感受，并从系统相册选择图片或视频。
+- 日记：记录体重、训练感受，并把从系统相册选择的图片或视频复制到应用私有目录。
 - 健身指导：内置首批常用动作要点、器械、难度和权威教程入口。
-- 个人：本地数据说明、Excel 与 PDF 导出。
+- 个人：本地数据说明、隐私保护的训练摘要分享、Excel 与 PDF 导出。
 - 数据：当前保存在应用沙箱的 Preferences 中，不上传服务器。
 
 ## 技术基线
@@ -43,4 +43,3 @@ entry/src/main/ets/
 ```
 
 产品方案、验收口径和待确认事项见 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) 与 [docs/PRODUCT_DECISIONS_NEEDED.md](docs/PRODUCT_DECISIONS_NEEDED.md)。
-

@@ -1,6 +1,8 @@
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { systemShare } from '@kit.ShareKit';
 import { WorkoutRepository } from '../data/WorkoutRepository';
 import { EXERCISE_GUIDES } from '../data/ExerciseCatalog';
 import { ExerciseEntry, ExerciseGuide, WorkoutRecord, dateKey, newId } from '../model/WorkoutModels';
@@ -47,7 +49,7 @@ struct Index {
   private exporter?: ExportService;
 
   aboutToAppear(): void {
-    const context = getContext(this);
+    const context = this.abilityContext();
     this.repository = new WorkoutRepository(context);
     this.exporter = new ExportService(context);
     this.reloadRecords();
@@ -119,16 +121,78 @@ struct Index {
     this.draftExercises = next.length > 0 ? next : [new ExerciseEntry(newId('exercise'))];
   }
 
-  private async chooseMedia(): Promise<void> {
+  private mediaPath(value: string): string {
+    const separator = value.indexOf('|');
+    return separator >= 0 ? value.substring(separator + 1) : value;
+  }
+
+  private mediaKind(value: string): string {
+    return value.startsWith('video|') ? 'video' : 'image';
+  }
+
+  private async chooseMedia(kind: string): Promise<void> {
     try {
-      const picker = new photoAccessHelper.PhotoViewPicker();
+      const mediaPicker = new photoAccessHelper.PhotoViewPicker();
       const options = new photoAccessHelper.PhotoSelectOptions();
-      options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_VIDEO_TYPE;
-      options.maxSelectNumber = 9;
-      const result = await picker.select(options);
-      this.draftMediaUris = result.photoUris;
+      options.MIMEType = kind === 'video' ? photoAccessHelper.PhotoViewMIMETypes.VIDEO_TYPE :
+        photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+      options.maxSelectNumber = kind === 'video' ? 2 : 6;
+      const result = await mediaPicker.select(options);
+      const context = this.abilityContext();
+      const mediaDirectory = `${context.filesDir}/workout-media`;
+      fileIo.mkdirSync(mediaDirectory, true);
+      const imported: string[] = [];
+      result.photoUris.forEach((uri: string, index: number) => {
+        const extension = kind === 'video' ? 'mp4' : 'jpg';
+        const path = `${mediaDirectory}/${Date.now()}-${index}.${extension}`;
+        fileIo.copyFileSync(uri, path, 0);
+        imported.push(`${kind}|${path}`);
+      });
+      this.draftMediaUris = this.draftMediaUris.concat(imported);
     } catch (error) {
       console.info(`Media picker closed: ${JSON.stringify(error)}`);
+    }
+  }
+
+  private removeMedia(index: number): void {
+    this.draftMediaUris = this.draftMediaUris.filter((item: string, itemIndex: number) => itemIndex !== index);
+  }
+
+  private abilityContext(): common.UIAbilityContext {
+    const context = this.getUIContext().getHostContext();
+    if (!context) {
+      throw new Error('无法获取应用上下文');
+    }
+    return context as common.UIAbilityContext;
+  }
+
+  private shareSummaryText(): string {
+    const monthCount = this.monthRecords().length;
+    if (this.records.length === 0) {
+      return '我开始使用练刻 Fitness 记录训练。每一次训练，都值得被看见。';
+    }
+    const latest = this.records[0];
+    const actionNames = latest.exercises.map((exercise: ExerciseEntry) => exercise.name).join('、');
+    return `练刻 Fitness 训练摘要\n累计记录 ${this.records.length} 天，本月训练 ${monthCount} 次。\n` +
+      `最近训练：${latest.date}${actionNames.length > 0 ? ` · ${actionNames}` : ''}`;
+  }
+
+  private async shareSummary(): Promise<void> {
+    try {
+      const record: systemShare.SharedRecord = {
+        utd: 'general.plain-text',
+        content: this.shareSummaryText(),
+        title: '练刻 Fitness 训练摘要'
+      };
+      const data = new systemShare.SharedData(record);
+      const controller = new systemShare.ShareController(data);
+      const options: systemShare.ShareControllerOptions = {
+        selectionMode: systemShare.SelectionMode.SINGLE
+      };
+      await controller.show(this.abilityContext(), options);
+    } catch (error) {
+      console.error(`Share failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '未完成分享，请重试' });
     }
   }
 
@@ -321,9 +385,35 @@ struct Index {
           Row({ space: 10 }) {
             Button('+ 添加动作').layoutWeight(1).backgroundColor('#1F5876F3').fontColor(COLOR_BLUE)
               .onClick(() => this.addExercise())
-            Button(`图片/视频 ${this.draftMediaUris.length > 0 ? `(${this.draftMediaUris.length})` : ''}`)
-              .layoutWeight(1).backgroundColor('#1F5876F3').fontColor(COLOR_BLUE).onClick(() => this.chooseMedia())
+            Button('+ 图片').layoutWeight(1).backgroundColor('#1F5876F3').fontColor(COLOR_BLUE)
+              .onClick(() => this.chooseMedia('image'))
+            Button('+ 视频').layoutWeight(1).backgroundColor('#1F5876F3').fontColor(COLOR_BLUE)
+              .onClick(() => this.chooseMedia('video'))
           }.margin({ top: 4 })
+          if (this.draftMediaUris.length > 0) {
+            Text(`媒体附件 · ${this.draftMediaUris.length}`).fontSize(13).fontColor(COLOR_MUTED)
+              .width('100%').margin({ top: 14, bottom: 8 })
+            Grid() {
+              ForEach(this.draftMediaUris, (media: string, index: number) => {
+                GridItem() {
+                  Stack({ alignContent: Alignment.TopEnd }) {
+                    if (this.mediaKind(media) === 'image') {
+                      Image(this.mediaPath(media)).width('100%').height(88).objectFit(ImageFit.Cover).borderRadius(12)
+                    } else {
+                      Column({ space: 5 }) {
+                        Text('▶').fontSize(24).fontColor(COLOR_BLUE)
+                        Text('训练视频').fontSize(11).fontColor(COLOR_MUTED)
+                      }.width('100%').height(88).justifyContent(FlexAlign.Center)
+                        .backgroundColor('#245876F3').borderRadius(12)
+                    }
+                    Button('×').type(ButtonType.Circle).width(26).height(26).fontSize(13)
+                      .backgroundColor('#B820242C').fontColor('#FFFFFF').margin(5)
+                      .onClick(() => this.removeMedia(index))
+                  }
+                }
+              }, (media: string) => media)
+            }.columnsTemplate('1fr 1fr 1fr').columnsGap(8).rowsGap(8)
+          }
           Button('保存训练记录').width('100%').height(48).margin({ top: 14 })
             .backgroundColor(COLOR_TEXT).fontColor('#FFFFFF').onClick(() => this.saveDraft())
         }
@@ -359,7 +449,7 @@ struct Index {
             Button(`查看 ${guide.sourceName} 教程`)
               .type(ButtonType.Normal).fontSize(12).fontColor(COLOR_BLUE).backgroundColor('#185876F3')
               .margin({ top: 14 })
-              .onClick(() => (getContext(this) as common.UIAbilityContext).openLink(guide.sourceUrl))
+              .onClick(() => this.abilityContext().openLink(guide.sourceUrl))
           }
         }, (guide: ExerciseGuide) => guide.id)
         Text('动作指导仅用于一般健身教育，疼痛、伤病或特殊健康状况请咨询专业人士。')
@@ -415,13 +505,15 @@ struct Index {
         }
         GlassCard() {
           Text('隐私与数据').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT).width('100%')
-          Text('训练记录存储在 App 私有空间。图片和视频当前保存系统授权 URI，不复制原文件。卸载应用会清除本地记录；请定期导出备份。')
+          Text('训练记录和选中的媒体副本均保存在 App 私有空间，不会自动上传。卸载应用会清除本地数据；请定期导出备份。')
             .fontSize(13).fontColor(COLOR_MUTED).lineHeight(21).width('100%').margin({ top: 10 })
         }
         GlassCard() {
           Text('分享').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT).width('100%')
-          Text('分享的具体内容和隐私字段尚待确认。当前可先导出文件，再从系统文件管理器分享。')
+          Text('默认只分享累计天数、本月次数和最近动作，不包含体重、感受或媒体。')
             .fontSize(13).fontColor(COLOR_MUTED).lineHeight(21).width('100%').margin({ top: 10 })
+          Button('分享训练摘要').width('100%').margin({ top: 14 })
+            .backgroundColor('#1F5876F3').fontColor(COLOR_BLUE).onClick(() => this.shareSummary())
         }
         Text('练刻 Fitness · 0.1.0').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
       }.padding({ left: 16, right: 16, top: 18, bottom: 28 })
