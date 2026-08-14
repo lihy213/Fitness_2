@@ -4,6 +4,7 @@
 .preview/
 build/
 entry/build/
+entry/.test/
 oh_modules/
 local.properties
 *.hap

@@ -1,17 +1,16 @@
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
-import { fileIo } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { systemShare } from '@kit.ShareKit';
 import { WorkoutRepository } from '../data/WorkoutRepository';
 import { EXERCISE_GUIDES } from '../data/ExerciseCatalog';
-import { ExerciseEntry, ExerciseGuide, WorkoutRecord, dateKey, newId } from '../model/WorkoutModels';
+import { ExerciseEntry, ExerciseGuide, UserProfile, WorkoutRecord, WorkoutSet, dateKey, newId } from '../model/WorkoutModels';
 import { ExportService } from '../service/ExportService';
 
 const COLOR_TEXT = '#20242C';
 const COLOR_MUTED = '#6F7683';
-const COLOR_ACCENT = '#E94F64';
-const COLOR_BLUE = '#5876F3';
+const COLOR_ACCENT = '#38A9FF';
+const COLOR_BLUE = '#176BFF';
 const COLOR_GLASS = '#D9FFFFFF';
 
 @Component
@@ -45,6 +44,12 @@ struct Index {
   @State draftExercises: ExerciseEntry[] = [new ExerciseEntry(newId('exercise'))];
   @State draftMediaUris: string[] = [];
   @State guideQuery: string = '';
+  @State profile: UserProfile = new UserProfile();
+  @State heightText: string = '';
+  @State targetWeightText: string = '';
+  @State exportStartDate: string = '';
+  @State exportEndDate: string = '';
+  @State showSplash: boolean = true;
   private repository?: WorkoutRepository;
   private exporter?: ExportService;
 
@@ -53,6 +58,28 @@ struct Index {
     this.repository = new WorkoutRepository(context);
     this.exporter = new ExportService(context);
     this.reloadRecords();
+    this.reloadProfile();
+    setTimeout(() => this.showSplash = false, 1200);
+  }
+
+  private async reloadProfile(): Promise<void> {
+    if (!this.repository) {
+      return;
+    }
+    this.profile = await this.repository.loadProfile();
+    this.heightText = this.profile.heightCm > 0 ? `${this.profile.heightCm}` : '';
+    this.targetWeightText = this.profile.targetWeightKg > 0 ? `${this.profile.targetWeightKg}` : '';
+  }
+
+  private async saveProfile(): Promise<void> {
+    if (!this.repository) {
+      return;
+    }
+    this.profile.heightCm = Number(this.heightText) || 0;
+    this.profile.targetWeightKg = Number(this.targetWeightText) || 0;
+    await this.repository.saveProfile(this.profile);
+    this.profile = this.profile;
+    promptAction.showToast({ message: '个人设置已保存' });
   }
 
   private async reloadRecords(): Promise<void> {
@@ -77,6 +104,15 @@ struct Index {
         copy.reps = item.reps;
         copy.weightKg = item.weightKg;
         copy.durationMinutes = item.durationMinutes;
+        copy.bodyPart = item.bodyPart;
+        copy.setDetails = item.setDetails.map((set: WorkoutSet) => new WorkoutSet(set.id, set.reps, set.weightKg));
+        copy.rpe = item.rpe;
+        copy.rir = item.rir;
+        copy.restSeconds = item.restSeconds;
+        copy.tempo = item.tempo;
+        copy.distanceKm = item.distanceKm;
+        copy.caloriesKcal = item.caloriesKcal;
+        copy.averageHeartRate = item.averageHeartRate;
         return copy;
       });
       this.draftMediaUris = record.mediaUris.slice();
@@ -98,15 +134,52 @@ struct Index {
     const item = next[index];
     if (field === 'name') {
       item.name = value;
-    } else if (field === 'sets') {
-      item.sets = Number(value) || 0;
-    } else if (field === 'reps') {
-      item.reps = Number(value) || 0;
-    } else if (field === 'weight') {
-      item.weightKg = Number(value) || 0;
+    } else if (field === 'bodyPart') {
+      item.bodyPart = value;
     } else if (field === 'duration') {
       item.durationMinutes = Number(value) || 0;
+    } else if (field === 'rpe') {
+      item.rpe = Number(value) || 0;
+    } else if (field === 'rir') {
+      item.rir = Number(value) || 0;
+    } else if (field === 'rest') {
+      item.restSeconds = Number(value) || 0;
+    } else if (field === 'tempo') {
+      item.tempo = value;
+    } else if (field === 'distance') {
+      item.distanceKm = Number(value) || 0;
+    } else if (field === 'calories') {
+      item.caloriesKcal = Number(value) || 0;
+    } else if (field === 'heartRate') {
+      item.averageHeartRate = Number(value) || 0;
     }
+    this.draftExercises = next;
+  }
+
+  private updateSet(exerciseIndex: number, setIndex: number, field: string, value: string): void {
+    const next = this.draftExercises.slice();
+    const set = next[exerciseIndex].setDetails[setIndex];
+    if (field === 'reps') {
+      set.reps = Number(value) || 0;
+    } else {
+      set.weightKg = Number(value) || 0;
+    }
+    next[exerciseIndex].sets = next[exerciseIndex].setDetails.length;
+    this.draftExercises = next;
+  }
+
+  private addSet(exerciseIndex: number): void {
+    const next = this.draftExercises.slice();
+    next[exerciseIndex].setDetails.push(new WorkoutSet(newId('set')));
+    next[exerciseIndex].sets = next[exerciseIndex].setDetails.length;
+    this.draftExercises = next;
+  }
+
+  private removeSet(exerciseIndex: number, setIndex: number): void {
+    const next = this.draftExercises.slice();
+    const remaining = next[exerciseIndex].setDetails.filter((set: WorkoutSet, index: number) => index !== setIndex);
+    next[exerciseIndex].setDetails = remaining.length > 0 ? remaining : [new WorkoutSet(newId('set'))];
+    next[exerciseIndex].sets = next[exerciseIndex].setDetails.length;
     this.draftExercises = next;
   }
 
@@ -138,17 +211,8 @@ struct Index {
         photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
       options.maxSelectNumber = kind === 'video' ? 2 : 6;
       const result = await mediaPicker.select(options);
-      const context = this.abilityContext();
-      const mediaDirectory = `${context.filesDir}/workout-media`;
-      fileIo.mkdirSync(mediaDirectory, true);
-      const imported: string[] = [];
-      result.photoUris.forEach((uri: string, index: number) => {
-        const extension = kind === 'video' ? 'mp4' : 'jpg';
-        const path = `${mediaDirectory}/${Date.now()}-${index}.${extension}`;
-        fileIo.copyFileSync(uri, path, 0);
-        imported.push(`${kind}|${path}`);
-      });
-      this.draftMediaUris = this.draftMediaUris.concat(imported);
+      this.draftMediaUris = this.draftMediaUris.concat(
+        result.photoUris.map((uri: string) => `${kind}|${uri}`));
     } catch (error) {
       console.info(`Media picker closed: ${JSON.stringify(error)}`);
     }
@@ -173,8 +237,9 @@ struct Index {
     }
     const latest = this.records[0];
     const actionNames = latest.exercises.map((exercise: ExerciseEntry) => exercise.name).join('、');
-    return `练刻 Fitness 训练摘要\n累计记录 ${this.records.length} 天，本月训练 ${monthCount} 次。\n` +
-      `最近训练：${latest.date}${actionNames.length > 0 ? ` · ${actionNames}` : ''}`;
+    const bodyWeight = !this.profile.hideWeightInShare && latest.bodyWeightKg > 0 ? ` · 体重 ${latest.bodyWeightKg} kg` : '';
+    return `练刻 LIANKE 训练摘要\n累计记录 ${this.records.length} 天，本月训练 ${monthCount} 次。\n` +
+      `最近训练：${latest.date}${actionNames.length > 0 ? ` · ${actionNames}` : ''}${bodyWeight}\n练就人生。`;
   }
 
   private async shareSummary(): Promise<void> {
@@ -182,7 +247,7 @@ struct Index {
       const record: systemShare.SharedRecord = {
         utd: 'general.plain-text',
         content: this.shareSummaryText(),
-        title: '练刻 Fitness 训练摘要'
+        title: '练刻 LIANKE 训练摘要'
       };
       const data = new systemShare.SharedData(record);
       const controller = new systemShare.ShareController(data);
@@ -201,10 +266,16 @@ struct Index {
       return;
     }
     const exercises = this.draftExercises.filter((item: ExerciseEntry) => item.name.trim().length > 0);
-    if (exercises.length === 0 && this.feelingText.trim().length === 0 && this.bodyWeightText.length === 0) {
+    if (exercises.length === 0 && this.feelingText.trim().length === 0 && this.bodyWeightText.length === 0 &&
+      this.draftMediaUris.length === 0) {
       promptAction.showToast({ message: '请至少填写一项训练内容、体重或感受' });
       return;
     }
+    exercises.forEach((exercise: ExerciseEntry) => {
+      exercise.sets = exercise.setDetails.length;
+      exercise.reps = exercise.setDetails.length > 0 ? exercise.setDetails[0].reps : 0;
+      exercise.weightKg = exercise.setDetails.length > 0 ? exercise.setDetails[0].weightKg : 0;
+    });
     const existing = this.recordForDate(this.selectedDate);
     const record = new WorkoutRecord(existing ? existing.id : newId('workout'), this.selectedDate);
     record.bodyWeightKg = Number(this.bodyWeightText) || 0;
@@ -273,6 +344,45 @@ struct Index {
     }
     return EXERCISE_GUIDES.filter((guide: ExerciseGuide) =>
       `${guide.name}${guide.bodyPart}${guide.equipment}`.toLowerCase().includes(query));
+  }
+
+  private updateProfile(field: string, value: string): void {
+    const next = this.profile;
+    if (field === 'nickname') {
+      next.nickname = value;
+    } else if (field === 'goal') {
+      next.trainingGoal = value;
+    }
+    this.profile = next;
+  }
+
+  private toggleUnit(): void {
+    const next = this.profile;
+    next.unit = next.unit === 'kg' ? 'lb' : 'kg';
+    this.profile = next;
+  }
+
+  private setHideWeight(value: boolean): void {
+    const next = this.profile;
+    next.hideWeightInShare = value;
+    this.profile = next;
+  }
+
+  private async chooseAvatar(): Promise<void> {
+    try {
+      const mediaPicker = new photoAccessHelper.PhotoViewPicker();
+      const options = new photoAccessHelper.PhotoSelectOptions();
+      options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+      options.maxSelectNumber = 1;
+      const result = await mediaPicker.select(options);
+      if (result.photoUris.length > 0) {
+        const next = this.profile;
+        next.avatarUri = result.photoUris[0];
+        this.profile = next;
+      }
+    } catch (error) {
+      console.info(`Avatar picker closed: ${JSON.stringify(error)}`);
+    }
   }
 
   @Builder
@@ -363,7 +473,7 @@ struct Index {
           Text('训练动作').fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT)
             .width('100%').margin({ top: 16, bottom: 8 })
           ForEach(this.draftExercises, (exercise: ExerciseEntry, index: number) => {
-            Column({ space: 8 }) {
+            Column({ space: 9 }) {
               Row({ space: 8 }) {
                 TextInput({ placeholder: '动作名称', text: exercise.name }).layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'name', value))
@@ -371,14 +481,42 @@ struct Index {
                   .onClick(() => this.removeExercise(index))
               }
               Row({ space: 7 }) {
-                TextInput({ placeholder: '组', text: `${exercise.sets}` }).type(InputType.Number).layoutWeight(1)
-                  .onChange((value: string) => this.updateExercise(index, 'sets', value))
-                TextInput({ placeholder: '次', text: `${exercise.reps}` }).type(InputType.Number).layoutWeight(1)
-                  .onChange((value: string) => this.updateExercise(index, 'reps', value))
-                TextInput({ placeholder: 'kg', text: `${exercise.weightKg}` }).type(InputType.Number).layoutWeight(1)
-                  .onChange((value: string) => this.updateExercise(index, 'weight', value))
+                TextInput({ placeholder: '训练部位', text: exercise.bodyPart }).layoutWeight(2)
+                  .onChange((value: string) => this.updateExercise(index, 'bodyPart', value))
                 TextInput({ placeholder: '分钟', text: `${exercise.durationMinutes}` }).type(InputType.Number).layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'duration', value))
+              }
+              Text(`逐组记录 · ${exercise.setDetails.length} 组`).fontSize(12).fontColor(COLOR_MUTED).width('100%')
+              ForEach(exercise.setDetails, (set: WorkoutSet, setIndex: number) => {
+                Row({ space: 7 }) {
+                  Text(`${setIndex + 1}`).fontSize(12).fontColor(COLOR_BLUE).width(22).textAlign(TextAlign.Center)
+                  TextInput({ placeholder: '次数', text: `${set.reps}` }).type(InputType.Number).layoutWeight(1)
+                    .onChange((value: string) => this.updateSet(index, setIndex, 'reps', value))
+                  TextInput({ placeholder: '重量 kg', text: `${set.weightKg}` }).type(InputType.Number).layoutWeight(1)
+                    .onChange((value: string) => this.updateSet(index, setIndex, 'weight', value))
+                  Button('−').type(ButtonType.Circle).width(30).height(30).fontColor(COLOR_MUTED)
+                    .backgroundColor('#18FFFFFF').onClick(() => this.removeSet(index, setIndex))
+                }
+              }, (set: WorkoutSet) => set.id)
+              Button('+ 添加一组').type(ButtonType.Normal).fontSize(12).fontColor(COLOR_BLUE)
+                .backgroundColor('#18176BFF').onClick(() => this.addSet(index))
+              Row({ space: 7 }) {
+                TextInput({ placeholder: 'RPE', text: `${exercise.rpe || ''}` }).type(InputType.Number).layoutWeight(1)
+                  .onChange((value: string) => this.updateExercise(index, 'rpe', value))
+                TextInput({ placeholder: 'RIR', text: `${exercise.rir || ''}` }).type(InputType.Number).layoutWeight(1)
+                  .onChange((value: string) => this.updateExercise(index, 'rir', value))
+                TextInput({ placeholder: '休息 秒', text: `${exercise.restSeconds || ''}` }).type(InputType.Number).layoutWeight(1)
+                  .onChange((value: string) => this.updateExercise(index, 'rest', value))
+                TextInput({ placeholder: '节奏 3-1-1', text: exercise.tempo }).layoutWeight(1)
+                  .onChange((value: string) => this.updateExercise(index, 'tempo', value))
+              }
+              Row({ space: 7 }) {
+                TextInput({ placeholder: '距离 km', text: `${exercise.distanceKm || ''}` }).type(InputType.Number).layoutWeight(1)
+                  .onChange((value: string) => this.updateExercise(index, 'distance', value))
+                TextInput({ placeholder: 'kcal', text: `${exercise.caloriesKcal || ''}` }).type(InputType.Number).layoutWeight(1)
+                  .onChange((value: string) => this.updateExercise(index, 'calories', value))
+                TextInput({ placeholder: '心率 bpm', text: `${exercise.averageHeartRate || ''}` }).type(InputType.Number)
+                  .layoutWeight(1).onChange((value: string) => this.updateExercise(index, 'heartRate', value))
               }
             }.padding(10).backgroundColor('#4DFFFFFF').borderRadius(14).margin({ bottom: 9 })
           }, (exercise: ExerciseEntry) => exercise.id)
@@ -463,10 +601,17 @@ struct Index {
       return;
     }
     try {
-      if (type === 'excel') {
-        await this.exporter.exportExcel(this.records);
+      if (this.exportStartDate && this.exportEndDate && this.exportStartDate > this.exportEndDate) {
+        promptAction.showToast({ message: '开始日期不能晚于结束日期' });
+        return;
+      }
+      const selected = this.records.filter((record: WorkoutRecord) =>
+        (!this.exportStartDate || record.date >= this.exportStartDate) &&
+        (!this.exportEndDate || record.date <= this.exportEndDate));
+      if (type === 'csv') {
+        await this.exporter.exportCsv(selected);
       } else {
-        await this.exporter.exportPdf(this.records);
+        await this.exporter.exportPdf(selected, this.exportStartDate, this.exportEndDate);
       }
       promptAction.showToast({ message: '导出成功' });
     } catch (error) {
@@ -479,43 +624,85 @@ struct Index {
   private ProfilePage() {
     Scroll() {
       Column({ space: 14 }) {
-        this.PageTitle('个人', '你的训练数据，当前只保存在本机')
+        this.PageTitle('个人档案', '本机优先，设置由你掌控')
         GlassCard() {
           Row({ space: 14 }) {
             Stack() {
-              Circle({ width: 64, height: 64 }).fill('#245876F3')
-              Text('练').fontSize(24).fontWeight(FontWeight.Bold).fontColor(COLOR_BLUE)
+              if (this.profile.avatarUri) {
+                Image(this.profile.avatarUri).width(68).height(68).objectFit(ImageFit.Cover).borderRadius(34)
+              } else {
+                Circle({ width: 68, height: 68 }).fill('#24176BFF')
+                Text('练').fontSize(25).fontWeight(FontWeight.Bold).fontColor(COLOR_BLUE)
+              }
             }
             Column({ space: 5 }) {
-              Text('健身爱好者').fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT)
+              Text(this.profile.nickname || '健身爱好者').fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT)
               Text(`累计记录 ${this.records.length} 天`).fontSize(13).fontColor(COLOR_MUTED)
             }.alignItems(HorizontalAlign.Start)
+            Blank()
+            Button('头像').fontSize(12).backgroundColor('#18176BFF').fontColor(COLOR_BLUE)
+              .onClick(() => this.chooseAvatar())
           }.width('100%')
+          TextInput({ placeholder: '昵称', text: this.profile.nickname }).margin({ top: 14 })
+            .onChange((value: string) => this.updateProfile('nickname', value))
+          Row({ space: 8 }) {
+            TextInput({ placeholder: '身高 cm', text: this.heightText }).type(InputType.Number).layoutWeight(1)
+              .onChange((value: string) => this.heightText = value)
+            TextInput({ placeholder: `目标体重 ${this.profile.unit}`, text: this.targetWeightText }).type(InputType.Number)
+              .layoutWeight(1).onChange((value: string) => this.targetWeightText = value)
+          }.margin({ top: 8 })
+          TextInput({ placeholder: '训练目标，例如增肌 / 减脂 / 体能', text: this.profile.trainingGoal })
+            .margin({ top: 8 }).onChange((value: string) => this.updateProfile('goal', value))
+          Row({ space: 10 }) {
+            Button(`单位 ${this.profile.unit}`).layoutWeight(1).backgroundColor('#18176BFF').fontColor(COLOR_BLUE)
+              .onClick(() => this.toggleUnit())
+            Button('保存个人设置').layoutWeight(2).backgroundColor(COLOR_BLUE).fontColor('#FFFFFF')
+              .onClick(() => this.saveProfile())
+          }.margin({ top: 10 })
         }
         GlassCard() {
           Text('导出记录').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT).width('100%')
-          Text('由系统文件选择器决定保存位置，不会自动上传。').fontSize(12).fontColor(COLOR_MUTED)
-            .width('100%').margin({ top: 5, bottom: 14 })
+          Text('填写 YYYY-MM-DD 可限定报告范围；留空表示全部。').fontSize(12).fontColor(COLOR_MUTED)
+            .width('100%').margin({ top: 5, bottom: 10 })
+          Row({ space: 8 }) {
+            TextInput({ placeholder: '开始日期', text: this.exportStartDate }).layoutWeight(1)
+              .onChange((value: string) => this.exportStartDate = value)
+            TextInput({ placeholder: '结束日期', text: this.exportEndDate }).layoutWeight(1)
+              .onChange((value: string) => this.exportEndDate = value)
+          }
           Row({ space: 10 }) {
-            Button('导出 Excel').layoutWeight(1).backgroundColor('#1880B24A').fontColor('#4F8222')
-              .onClick(() => this.runExport('excel'))
+            Button('导出 CSV').layoutWeight(1).backgroundColor('#1838A9FF').fontColor(COLOR_BLUE)
+              .onClick(() => this.runExport('csv'))
             Button('导出 PDF').layoutWeight(1).backgroundColor('#18E94F64').fontColor(COLOR_ACCENT)
               .onClick(() => this.runExport('pdf'))
-          }
+          }.margin({ top: 10 })
         }
         GlassCard() {
           Text('隐私与数据').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT).width('100%')
-          Text('训练记录和选中的媒体副本均保存在 App 私有空间，不会自动上传。卸载应用会清除本地数据；请定期导出备份。')
+          Text('训练数据保存在 App 私有空间；媒体仅保留系统相册引用，删除记录不会删除相册原文件。')
             .fontSize(13).fontColor(COLOR_MUTED).lineHeight(21).width('100%').margin({ top: 10 })
+          Row() {
+            Text('分享时隐藏体重').fontSize(13).fontColor(COLOR_TEXT)
+            Blank()
+            Toggle({ type: ToggleType.Switch, isOn: this.profile.hideWeightInShare })
+              .selectedColor(COLOR_BLUE).onChange((value: boolean) => this.setHideWeight(value))
+          }.width('100%').margin({ top: 12 })
+        }
+        GlassCard() {
+          Text('账号与备份').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT).width('100%')
+          Text('华为账号登录、云同步、应用锁/生物识别和加密导出需要 AppGallery Connect 服务配置，当前保留接口，尚未启用。')
+            .fontSize(13).fontColor(COLOR_MUTED).lineHeight(21).width('100%').margin({ top: 10 })
+          Button('华为账号与云备份 · 待配置').width('100%').margin({ top: 12 })
+            .enabled(false).backgroundColor('#16176BFF').fontColor(COLOR_MUTED)
         }
         GlassCard() {
           Text('分享').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT).width('100%')
-          Text('默认只分享累计天数、本月次数和最近动作，不包含体重、感受或媒体。')
+          Text(this.profile.hideWeightInShare ? '当前分享不包含体重、感受或媒体。' : '当前分享包含最近体重，不包含感受或媒体。')
             .fontSize(13).fontColor(COLOR_MUTED).lineHeight(21).width('100%').margin({ top: 10 })
           Button('分享训练摘要').width('100%').margin({ top: 14 })
             .backgroundColor('#1F5876F3').fontColor(COLOR_BLUE).onClick(() => this.shareSummary())
         }
-        Text('练刻 Fitness · 0.1.0').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
+        Text('练刻 LIANKE · 0.2.0').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
       }.padding({ left: 16, right: 16, top: 18, bottom: 28 })
     }.scrollBar(BarState.Off).width('100%').height('100%')
   }
@@ -531,9 +718,9 @@ struct Index {
   build() {
     Stack() {
       Column().width('100%').height('100%')
-        .linearGradient({ angle: 145, colors: [['#E9EEF8', 0], ['#F7EDEF', 0.5], ['#E7F2F0', 1]] })
-      Circle({ width: 230, height: 230 }).fill('#305876F3').blur(55).position({ x: -80, y: 70 })
-      Circle({ width: 260, height: 260 }).fill('#28E94F64').blur(62).position({ x: 230, y: 410 })
+        .linearGradient({ angle: 145, colors: [['#EAF6FF', 0], ['#F8FCFF', 0.5], ['#E3F1FF', 1]] })
+      Circle({ width: 230, height: 230 }).fill('#30176BFF').blur(55).position({ x: -80, y: 70 })
+      Circle({ width: 260, height: 260 }).fill('#2438A9FF').blur(62).position({ x: 230, y: 410 })
       Tabs({ barPosition: BarPosition.End, index: this.currentTab }) {
         TabContent() { this.HomePage() }.tabBar(this.TabLabel('◫', '主页', 0))
         TabContent() { this.GuidePage() }.tabBar(this.TabLabel('◇', '指导', 1))
@@ -544,6 +731,16 @@ struct Index {
       .barBackgroundBlurStyle(BlurStyle.Thick)
       .onChange((index: number) => this.currentTab = index)
       .width('100%').height('100%')
+      if (this.showSplash) {
+        Column({ space: 14 }) {
+          Image($r('app.media.lianke_logo_mark_v2')).width(190).height(190).objectFit(ImageFit.Contain)
+          Text('练刻').fontSize(38).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
+          Text('LIANKE').fontSize(14).letterSpacing(4).fontColor('#DCEBFF')
+          Text('练就人生').fontSize(18).fontWeight(FontWeight.Medium).fontColor('#FFFFFF').margin({ top: 10 })
+        }
+        .width('100%').height('100%').justifyContent(FlexAlign.Center)
+        .backgroundColor('#176BFF').zIndex(10)
+      }
     }.width('100%').height('100%')
   }
 }

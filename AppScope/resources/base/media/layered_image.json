@@ -1,7 +1,6 @@
 {
   "layered-image": {
     "background": "$media:background",
-    "foreground": "$media:foreground"
+    "foreground": "$media:lianke_logo_mark_v2"
   }
 }
-

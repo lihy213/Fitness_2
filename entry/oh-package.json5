@@ -1,10 +1,10 @@
 {
+  "modelVersion": "5.0.0",
   "name": "entry",
-  "version": "0.1.0",
-  "description": "Fitness workout journal entry module.",
+  "version": "1.0.0",
+  "description": "Lianke local-first workout journal entry module.",
   "main": "",
   "author": "lihy213",
   "license": "MIT",
   "dependencies": {}
 }
-
