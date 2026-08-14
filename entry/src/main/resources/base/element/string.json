@@ -1,0 +1,8 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "练刻健身记录" },
+    { "name": "EntryAbility_desc", "value": "练刻健身记录主入口" },
+    { "name": "EntryAbility_label", "value": "练刻 Fitness" }
+  ]
+}
+
