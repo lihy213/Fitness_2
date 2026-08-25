@@ -8,7 +8,10 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $sdkRoot = if ($env:DEVECO_SDK_HOME) { $env:DEVECO_SDK_HOME } else { "C:\Program Files\Huawei\DevEco Studio\sdk" }
 $hdc = Join-Path $sdkRoot "default\openharmony\toolchains\hdc.exe"
 $hvigor = "C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat"
-$hap = Join-Path $projectRoot "entry\build\default\outputs\default\entry-default-unsigned.hap"
+$outputDir = Join-Path $projectRoot "entry\build\default\outputs\default"
+$signedHap = Join-Path $outputDir "entry-default-signed.hap"
+$unsignedHap = Join-Path $outputDir "entry-default-unsigned.hap"
+$hap = $signedHap
 
 if (!(Test-Path -LiteralPath $hdc)) {
     throw "HDC not found: $hdc. Set DEVECO_SDK_HOME or update the SDK path in this script."
@@ -30,8 +33,12 @@ if (!$SkipBuild) {
     }
 }
 
-if (!(Test-Path -LiteralPath $hap)) {
-    throw "HAP not found: $hap"
+if (Test-Path -LiteralPath $signedHap) {
+    $hap = $signedHap
+} elseif (Test-Path -LiteralPath $unsignedHap) {
+    $hap = $unsignedHap
+} else {
+    throw "HAP not found. Build the project first."
 }
 
 $targets = @(& $hdc list targets | Where-Object { $_ -and $_ -notmatch "^\s*$" })
@@ -49,6 +56,7 @@ if ($targets.Count -gt 1 -and !$Target) {
 
 $serial = $targets[0]
 Write-Host "Install target: $serial"
+Write-Host "Package: $hap"
 & $hdc -t $serial install -r $hap
 if ($LASTEXITCODE -ne 0) {
     throw "HAP install failed. Configure debug signing in DevEco Studio Project Structure > Signing, then rebuild."
