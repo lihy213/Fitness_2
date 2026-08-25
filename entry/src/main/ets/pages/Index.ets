@@ -12,6 +12,26 @@ const COLOR_MUTED = '#6F7683';
 const COLOR_ACCENT = '#38A9FF';
 const COLOR_BLUE = '#176BFF';
 const COLOR_GLASS = '#D9FFFFFF';
+const COLOR_INPUT = '#F2FFFFFF';
+const COLOR_SELECTION = '#3338A9FF';
+
+@Extend(TextInput)
+function liankeInputStyle() {
+  .fontColor(COLOR_TEXT)
+  .placeholderColor(COLOR_MUTED)
+  .caretColor(COLOR_BLUE)
+  .selectedBackgroundColor(COLOR_SELECTION)
+  .backgroundColor(COLOR_INPUT)
+}
+
+@Extend(TextArea)
+function liankeTextAreaStyle() {
+  .fontColor(COLOR_TEXT)
+  .placeholderColor(COLOR_MUTED)
+  .caretColor(COLOR_BLUE)
+  .selectedBackgroundColor(COLOR_SELECTION)
+  .backgroundColor(COLOR_INPUT)
+}
 
 @Component
 struct GlassCard {
@@ -466,33 +486,33 @@ struct Index {
                 .backgroundColor('#18E94F64').onClick(() => this.deleteSelectedRecord())
             }
           }.width('100%')
-          TextInput({ placeholder: '体重（kg）', text: this.bodyWeightText })
+          TextInput({ placeholder: '体重（kg）', text: this.bodyWeightText }).liankeInputStyle()
             .type(InputType.Number).margin({ top: 14 }).onChange((value: string) => this.bodyWeightText = value)
-          TextArea({ placeholder: '今天状态如何？记录训练感受…', text: this.feelingText })
+          TextArea({ placeholder: '今天状态如何？记录训练感受…', text: this.feelingText }).liankeTextAreaStyle()
             .height(88).margin({ top: 10 }).onChange((value: string) => this.feelingText = value)
           Text('训练动作').fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT)
             .width('100%').margin({ top: 16, bottom: 8 })
           ForEach(this.draftExercises, (exercise: ExerciseEntry, index: number) => {
             Column({ space: 9 }) {
               Row({ space: 8 }) {
-                TextInput({ placeholder: '动作名称', text: exercise.name }).layoutWeight(1)
+                TextInput({ placeholder: '动作名称', text: exercise.name }).liankeInputStyle().layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'name', value))
                 Button('×').type(ButtonType.Circle).fontColor(COLOR_ACCENT).backgroundColor('#18E94F64')
                   .onClick(() => this.removeExercise(index))
               }
               Row({ space: 7 }) {
-                TextInput({ placeholder: '训练部位', text: exercise.bodyPart }).layoutWeight(2)
+                TextInput({ placeholder: '训练部位', text: exercise.bodyPart }).liankeInputStyle().layoutWeight(2)
                   .onChange((value: string) => this.updateExercise(index, 'bodyPart', value))
-                TextInput({ placeholder: '分钟', text: `${exercise.durationMinutes}` }).type(InputType.Number).layoutWeight(1)
+                TextInput({ placeholder: '分钟', text: `${exercise.durationMinutes}` }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'duration', value))
               }
               Text(`逐组记录 · ${exercise.setDetails.length} 组`).fontSize(12).fontColor(COLOR_MUTED).width('100%')
               ForEach(exercise.setDetails, (set: WorkoutSet, setIndex: number) => {
                 Row({ space: 7 }) {
                   Text(`${setIndex + 1}`).fontSize(12).fontColor(COLOR_BLUE).width(22).textAlign(TextAlign.Center)
-                  TextInput({ placeholder: '次数', text: `${set.reps}` }).type(InputType.Number).layoutWeight(1)
+                  TextInput({ placeholder: '次数', text: `${set.reps}` }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
                     .onChange((value: string) => this.updateSet(index, setIndex, 'reps', value))
-                  TextInput({ placeholder: '重量 kg', text: `${set.weightKg}` }).type(InputType.Number).layoutWeight(1)
+                  TextInput({ placeholder: '重量 kg', text: `${set.weightKg}` }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
                     .onChange((value: string) => this.updateSet(index, setIndex, 'weight', value))
                   Button('−').type(ButtonType.Circle).width(30).height(30).fontColor(COLOR_MUTED)
                     .backgroundColor('#18FFFFFF').onClick(() => this.removeSet(index, setIndex))
@@ -501,21 +521,21 @@ struct Index {
               Button('+ 添加一组').type(ButtonType.Normal).fontSize(12).fontColor(COLOR_BLUE)
                 .backgroundColor('#18176BFF').onClick(() => this.addSet(index))
               Row({ space: 7 }) {
-                TextInput({ placeholder: 'RPE', text: `${exercise.rpe || ''}` }).type(InputType.Number).layoutWeight(1)
+                TextInput({ placeholder: 'RPE', text: `${exercise.rpe || ''}` }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'rpe', value))
-                TextInput({ placeholder: 'RIR', text: `${exercise.rir || ''}` }).type(InputType.Number).layoutWeight(1)
+                TextInput({ placeholder: 'RIR', text: `${exercise.rir || ''}` }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'rir', value))
-                TextInput({ placeholder: '休息 秒', text: `${exercise.restSeconds || ''}` }).type(InputType.Number).layoutWeight(1)
+                TextInput({ placeholder: '休息 秒', text: `${exercise.restSeconds || ''}` }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'rest', value))
-                TextInput({ placeholder: '节奏 3-1-1', text: exercise.tempo }).layoutWeight(1)
+                TextInput({ placeholder: '节奏 3-1-1', text: exercise.tempo }).liankeInputStyle().layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'tempo', value))
               }
               Row({ space: 7 }) {
-                TextInput({ placeholder: '距离 km', text: `${exercise.distanceKm || ''}` }).type(InputType.Number).layoutWeight(1)
+                TextInput({ placeholder: '距离 km', text: `${exercise.distanceKm || ''}` }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'distance', value))
-                TextInput({ placeholder: 'kcal', text: `${exercise.caloriesKcal || ''}` }).type(InputType.Number).layoutWeight(1)
+                TextInput({ placeholder: 'kcal', text: `${exercise.caloriesKcal || ''}` }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
                   .onChange((value: string) => this.updateExercise(index, 'calories', value))
-                TextInput({ placeholder: '心率 bpm', text: `${exercise.averageHeartRate || ''}` }).type(InputType.Number)
+                TextInput({ placeholder: '心率 bpm', text: `${exercise.averageHeartRate || ''}` }).liankeInputStyle().type(InputType.Number)
                   .layoutWeight(1).onChange((value: string) => this.updateExercise(index, 'heartRate', value))
               }
             }.padding(10).backgroundColor('#4DFFFFFF').borderRadius(14).margin({ bottom: 9 })
@@ -564,7 +584,7 @@ struct Index {
     Scroll() {
       Column({ space: 14 }) {
         this.PageTitle('健身指导', '先掌握动作，再逐步增加负重')
-        TextInput({ placeholder: '搜索动作、部位或器械', text: this.guideQuery })
+        TextInput({ placeholder: '搜索动作、部位或器械', text: this.guideQuery }).liankeInputStyle()
           .height(46).backgroundColor(COLOR_GLASS).backdropBlur(16).borderRadius(18)
           .onChange((value: string) => this.guideQuery = value)
         ForEach(this.filteredGuides(), (guide: ExerciseGuide) => {
@@ -643,15 +663,15 @@ struct Index {
             Button('头像').fontSize(12).backgroundColor('#18176BFF').fontColor(COLOR_BLUE)
               .onClick(() => this.chooseAvatar())
           }.width('100%')
-          TextInput({ placeholder: '昵称', text: this.profile.nickname }).margin({ top: 14 })
+          TextInput({ placeholder: '昵称', text: this.profile.nickname }).liankeInputStyle().margin({ top: 14 })
             .onChange((value: string) => this.updateProfile('nickname', value))
           Row({ space: 8 }) {
-            TextInput({ placeholder: '身高 cm', text: this.heightText }).type(InputType.Number).layoutWeight(1)
+            TextInput({ placeholder: '身高 cm', text: this.heightText }).liankeInputStyle().type(InputType.Number).layoutWeight(1)
               .onChange((value: string) => this.heightText = value)
-            TextInput({ placeholder: `目标体重 ${this.profile.unit}`, text: this.targetWeightText }).type(InputType.Number)
+            TextInput({ placeholder: `目标体重 ${this.profile.unit}`, text: this.targetWeightText }).liankeInputStyle().type(InputType.Number)
               .layoutWeight(1).onChange((value: string) => this.targetWeightText = value)
           }.margin({ top: 8 })
-          TextInput({ placeholder: '训练目标，例如增肌 / 减脂 / 体能', text: this.profile.trainingGoal })
+          TextInput({ placeholder: '训练目标，例如增肌 / 减脂 / 体能', text: this.profile.trainingGoal }).liankeInputStyle()
             .margin({ top: 8 }).onChange((value: string) => this.updateProfile('goal', value))
           Row({ space: 10 }) {
             Button(`单位 ${this.profile.unit}`).layoutWeight(1).backgroundColor('#18176BFF').fontColor(COLOR_BLUE)
@@ -665,9 +685,9 @@ struct Index {
           Text('填写 YYYY-MM-DD 可限定报告范围；留空表示全部。').fontSize(12).fontColor(COLOR_MUTED)
             .width('100%').margin({ top: 5, bottom: 10 })
           Row({ space: 8 }) {
-            TextInput({ placeholder: '开始日期', text: this.exportStartDate }).layoutWeight(1)
+            TextInput({ placeholder: '开始日期', text: this.exportStartDate }).liankeInputStyle().layoutWeight(1)
               .onChange((value: string) => this.exportStartDate = value)
-            TextInput({ placeholder: '结束日期', text: this.exportEndDate }).layoutWeight(1)
+            TextInput({ placeholder: '结束日期', text: this.exportEndDate }).liankeInputStyle().layoutWeight(1)
               .onChange((value: string) => this.exportEndDate = value)
           }
           Row({ space: 10 }) {
@@ -702,7 +722,7 @@ struct Index {
           Button('分享训练摘要').width('100%').margin({ top: 14 })
             .backgroundColor('#1F5876F3').fontColor(COLOR_BLUE).onClick(() => this.shareSummary())
         }
-        Text('练刻 LIANKE · 0.2.0').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
+        Text('练刻 LIANKE · 0.2.1').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
       }.padding({ left: 16, right: 16, top: 18, bottom: 28 })
     }.scrollBar(BarState.Off).width('100%').height('100%')
   }

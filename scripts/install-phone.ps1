@@ -41,7 +41,7 @@ if (Test-Path -LiteralPath $signedHap) {
     throw "HAP not found. Build the project first."
 }
 
-$targets = @(& $hdc list targets | Where-Object { $_ -and $_ -notmatch "^\s*$" })
+$targets = @(& $hdc list targets | Where-Object { $_ -and $_.Trim() -and $_.Trim() -ne "[Empty]" })
 if ($Target) {
     $targets = @($targets | Where-Object { $_ -eq $Target })
 }
