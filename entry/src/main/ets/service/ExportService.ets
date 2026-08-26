@@ -68,68 +68,129 @@ export class ExportService {
   }
 
   async exportPdf(records: WorkoutRecord[], startDate: string, endDate: string): Promise<string> {
-    const temporaryPath = `${this.context.tempDir}/Lianke-Records.pdf`;
+    const temporaryPath = `${this.context.tempDir}/Lianke-Records-${Date.now()}.pdf`;
+    const temporaryImages: string[] = [];
     const document = new pdfService.PdfDocument();
-    if (!document.createDocument(595, 842)) {
-      throw new Error('无法创建 PDF 文档');
-    }
-    const font = new pdfService.FontInfo();
-    font.fontName = 'HarmonyOS Sans SC';
-    const normal = new pdfService.TextStyle();
-    normal.fontInfo = font;
-    normal.textSize = 11;
-    normal.textColor = 0xFF20242C;
-    const title = new pdfService.TextStyle();
-    title.fontInfo = font;
-    title.textSize = 18;
-    title.textColor = 0xFF20242C;
-    title.isBold = true;
-    let page = document.getPage(0);
-    page.addTextObject('练刻 LIANKE', 42, 735, title);
-    page.addTextObject('练就人生 · TRAIN WITH INTENT', 42, 700, normal);
-    page.addTextObject(`报告范围  ${startDate || '最早记录'} — ${endDate || '最新记录'}`, 42, 650, normal);
-    page.addTextObject(`训练天数  ${records.length}`, 42, 620, title);
-    page.addTextObject(`训练频率  ${'█'.repeat(Math.min(records.length, 20)) || '暂无记录'}`, 42, 575, normal);
-    page.addTextObject('以下内容由本机训练记录生成，不会自动上传。', 42, 520, normal);
-    page.release();
-    page = document.insertBlankPage(document.getPageCount(), 595, 842);
-    let y = 800;
-    const lines = recordLines(records);
-    lines.forEach((line: string, index: number) => {
-      if (y < 45) {
+    let documentCreated = false;
+    let documentReleased = false;
+    try {
+      if (!document.createDocument(595, 842)) {
+        throw new Error('无法创建 PDF 文档');
+      }
+      documentCreated = true;
+      const font = new pdfService.FontInfo();
+      font.fontName = 'HarmonyOS Sans SC';
+      const normal = new pdfService.TextStyle();
+      normal.fontInfo = font;
+      normal.textSize = 11;
+      normal.textColor = 0xFF20242C;
+      const title = new pdfService.TextStyle();
+      title.fontInfo = font;
+      title.textSize = 18;
+      title.textColor = 0xFF20242C;
+      title.isBold = true;
+      let page = document.getPage(0);
+      try {
+        page.addTextObject('练刻 LIANKE', 42, 735, title);
+        page.addTextObject('练就人生 · TRAIN WITH INTENT', 42, 700, normal);
+        page.addTextObject(`报告范围  ${startDate || '最早记录'} — ${endDate || '最新记录'}`, 42, 650, normal);
+        page.addTextObject(`训练天数  ${records.length}`, 42, 620, title);
+        page.addTextObject(`训练频率  ${'█'.repeat(Math.min(records.length, 20)) || '暂无记录'}`, 42, 575, normal);
+        page.addTextObject('以下内容由本机训练记录生成，不会自动上传。', 42, 520, normal);
         page.release();
         page = document.insertBlankPage(document.getPageCount(), 595, 842);
-        y = 800;
+        let y = 800;
+        const lines = recordLines(records);
+        lines.forEach((line: string, index: number) => {
+          if (y < 45) {
+            page.release();
+            page = document.insertBlankPage(document.getPageCount(), 595, 842);
+            y = 800;
+          }
+          page.addTextObject(line, 42, y, index === 0 ? title : normal);
+          y -= index === 0 ? 34 : 20;
+        });
+        let imageIndex = 0;
+        records.forEach((record: WorkoutRecord) => {
+          record.mediaUris.forEach((media: string) => {
+            if (!media.startsWith('image|')) {
+              return;
+            }
+            try {
+              const imagePath = this.copyImageToTemp(media.substring('image|'.length), imageIndex++);
+              temporaryImages.push(imagePath);
+              if (y < 220) {
+                page.release();
+                page = document.insertBlankPage(document.getPageCount(), 595, 842);
+                y = 800;
+              }
+              page.addImageObject(imagePath, 42, y - 160, 240, 150);
+              y -= 175;
+            } catch (error) {
+              console.warn(`PDF image skipped: ${JSON.stringify(error)}`);
+            }
+          });
+        });
+      } finally {
+        page.release();
       }
-      page.addTextObject(line, 42, y, index === 0 ? title : normal);
-      y -= index === 0 ? 34 : 20;
-    });
-    records.forEach((record: WorkoutRecord) => {
-      record.mediaUris.forEach((media: string) => {
-        if (!media.startsWith('image|')) {
-          return;
-        }
-        if (y < 220) {
-          page.release();
-          page = document.insertBlankPage(document.getPageCount(), 595, 842);
-          y = 800;
-        }
-        page.addImageObject(media.substring('image|'.length), 42, y - 160, 240, 150);
-        y -= 175;
-      });
-    });
-    page.release();
-    if (!document.saveDocument(temporaryPath)) {
+      if (!document.saveDocument(temporaryPath)) {
+        throw new Error('无法保存 PDF 文档');
+      }
       document.releaseDocument();
-      throw new Error('无法保存 PDF 文档');
+      documentReleased = true;
+      const uri = await this.chooseDestination('Lianke-Records.pdf', 'PDF 文档|.pdf');
+      this.copyFileToDestination(temporaryPath, uri);
+      return uri;
+    } finally {
+      if (documentCreated && !documentReleased) {
+        document.releaseDocument();
+      }
+      temporaryImages.forEach((path: string) => this.removeTemporaryFile(path));
+      this.removeTemporaryFile(temporaryPath);
     }
-    document.releaseDocument();
-    const uri = await this.chooseDestination('Lianke-Records.pdf', 'PDF 文档|.pdf');
-    fileIo.copyFileSync(temporaryPath, uri, 0);
-    fileIo.unlinkSync(temporaryPath);
-    return uri;
   }
 
+  private copyImageToTemp(uri: string, index: number): string {
+    const lower = uri.toLowerCase();
+    const suffix = lower.includes('.png') ? 'png' : lower.includes('.webp') ? 'webp' : 'jpg';
+    const destinationPath = `${this.context.tempDir}/Lianke-Pdf-Image-${Date.now()}-${index}.${suffix}`;
+    const source = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+    try {
+      const destination = fileIo.openSync(destinationPath,
+        fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+      try {
+        fileIo.copyFileSync(source.fd, destination.fd, 0);
+      } finally {
+        fileIo.closeSync(destination);
+      }
+    } finally {
+      fileIo.closeSync(source);
+    }
+    return destinationPath;
+  }
+
+  private copyFileToDestination(sourcePath: string, destinationUri: string): void {
+    const source = fileIo.openSync(sourcePath, fileIo.OpenMode.READ_ONLY);
+    try {
+      const destination = fileIo.openSync(destinationUri, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+      try {
+        fileIo.copyFileSync(source.fd, destination.fd, 0);
+      } finally {
+        fileIo.closeSync(destination);
+      }
+    } finally {
+      fileIo.closeSync(source);
+    }
+  }
+
+  private removeTemporaryFile(path: string): void {
+    try {
+      fileIo.unlinkSync(path);
+    } catch (error) {
+      console.info(`Temporary export file cleanup skipped: ${JSON.stringify(error)}`);
+    }
+  }
   private async chooseDestination(fileName: string, suffix: string): Promise<string> {
     const documentPicker = new picker.DocumentViewPicker(this.context);
     const options = new picker.DocumentSaveOptions();

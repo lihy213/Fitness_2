@@ -640,6 +640,32 @@ struct Index {
     }
   }
 
+  private parseExportDate(value: string): Date {
+    if (!value) {
+      return new Date();
+    }
+    const parts = value.split('-');
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  }
+
+  private showExportDatePicker(target: string): void {
+    const current = target === 'start' ? this.exportStartDate : this.exportEndDate;
+    const earliest = target === 'end' && this.exportStartDate ? this.parseExportDate(this.exportStartDate) :
+      new Date(2000, 0, 1);
+    const latest = target === 'start' && this.exportEndDate ? this.parseExportDate(this.exportEndDate) : new Date();
+    CalendarPickerDialog.show({
+      selected: current ? this.parseExportDate(current) : new Date(),
+      start: earliest,
+      end: latest,
+      onAccept: (value: Date) => {
+        if (target === 'start') {
+          this.exportStartDate = dateKey(value);
+        } else {
+          this.exportEndDate = dateKey(value);
+        }
+      }
+    });
+  }
   @Builder
   private ProfilePage() {
     Scroll() {
@@ -682,13 +708,20 @@ struct Index {
         }
         GlassCard() {
           Text('导出记录').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT).width('100%')
-          Text('填写 YYYY-MM-DD 可限定报告范围；留空表示全部。').fontSize(12).fontColor(COLOR_MUTED)
+          Text('点击开始和结束日期，从日历中选择报告范围；留空表示全部。').fontSize(12).fontColor(COLOR_MUTED)
             .width('100%').margin({ top: 5, bottom: 10 })
           Row({ space: 8 }) {
-            TextInput({ placeholder: '开始日期', text: this.exportStartDate }).liankeInputStyle().layoutWeight(1)
-              .onChange((value: string) => this.exportStartDate = value)
-            TextInput({ placeholder: '结束日期', text: this.exportEndDate }).liankeInputStyle().layoutWeight(1)
-              .onChange((value: string) => this.exportEndDate = value)
+            Button(this.exportStartDate || '选择开始日期').layoutWeight(1).height(44)
+              .fontColor(this.exportStartDate ? COLOR_TEXT : COLOR_MUTED).backgroundColor(COLOR_INPUT)
+              .onClick(() => this.showExportDatePicker('start'))
+            Button(this.exportEndDate || '选择结束日期').layoutWeight(1).height(44)
+              .fontColor(this.exportEndDate ? COLOR_TEXT : COLOR_MUTED).backgroundColor(COLOR_INPUT)
+              .onClick(() => this.showExportDatePicker('end'))
+            Button('清除').height(44).fontColor(COLOR_BLUE).backgroundColor('#18176BFF')
+              .onClick(() => {
+                this.exportStartDate = '';
+                this.exportEndDate = '';
+              })
           }
           Row({ space: 10 }) {
             Button('导出 CSV').layoutWeight(1).backgroundColor('#1838A9FF').fontColor(COLOR_BLUE)
@@ -722,7 +755,7 @@ struct Index {
           Button('分享训练摘要').width('100%').margin({ top: 14 })
             .backgroundColor('#1F5876F3').fontColor(COLOR_BLUE).onClick(() => this.shareSummary())
         }
-        Text('练刻 LIANKE · 0.2.1').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
+        Text('练刻 LIANKE · 0.2.2').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
       }.padding({ left: 16, right: 16, top: 18, bottom: 28 })
     }.scrollBar(BarState.Off).width('100%').height('100%')
   }
