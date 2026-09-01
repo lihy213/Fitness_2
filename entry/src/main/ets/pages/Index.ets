@@ -635,7 +635,7 @@ struct Index {
       }
       promptAction.showToast({ message: '导出成功' });
     } catch (error) {
-      console.error(`Export failed: ${JSON.stringify(error)}`);
+      console.error(`Export failed: ${error}`);
       promptAction.showToast({ message: '未完成导出，请重试' });
     }
   }
@@ -755,7 +755,7 @@ struct Index {
           Button('分享训练摘要').width('100%').margin({ top: 14 })
             .backgroundColor('#1F5876F3').fontColor(COLOR_BLUE).onClick(() => this.shareSummary())
         }
-        Text('练刻 LIANKE · 0.2.2').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
+        Text('练刻 LIANKE · 0.2.3').fontSize(11).fontColor(COLOR_MUTED).margin({ top: 6 })
       }.padding({ left: 16, right: 16, top: 18, bottom: 28 })
     }.scrollBar(BarState.Off).width('100%').height('100%')
   }

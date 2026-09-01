@@ -1,41 +1,13 @@
 import { Context } from '@kit.AbilityKit';
 import { fileIo, picker } from '@kit.CoreFileKit';
+import { image } from '@kit.ImageKit';
 import { pdfService } from '@kit.PDFKit';
 import { ExerciseEntry, WorkoutRecord, WorkoutSet } from '../model/WorkoutModels';
+import { buildPdfRecordLines } from './PdfContent';
+import { fitPdfImageToBox, PdfImageLayout } from './PdfLayout';
 
 function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
-}
-
-function recordLines(records: WorkoutRecord[]): string[] {
-  const lines: string[] = ['练刻 LIANKE · 健身记录'];
-  if (records.length === 0) {
-    lines.push('暂无训练记录');
-    return lines;
-  }
-  records.forEach((record: WorkoutRecord) => {
-    lines.push(`${record.date}  体重: ${record.bodyWeightKg > 0 ? `${record.bodyWeightKg} kg` : '未记录'}`);
-    record.exercises.forEach((exercise: ExerciseEntry) => {
-      const duration = exercise.durationMinutes > 0 ? ` / ${exercise.durationMinutes} 分钟` : '';
-      lines.push(`  ${exercise.name}${exercise.bodyPart ? ` · ${exercise.bodyPart}` : ''}${duration}`);
-      exercise.setDetails.forEach((set: WorkoutSet, index: number) => {
-        lines.push(`    第 ${index + 1} 组  ${set.reps} 次 × ${set.weightKg} kg`);
-      });
-      const metrics = `RPE ${exercise.rpe || '-'} / RIR ${exercise.rir || '-'} / 休息 ${exercise.restSeconds || '-'} 秒`;
-      lines.push(`    ${metrics}`);
-      if (exercise.tempo || exercise.distanceKm || exercise.caloriesKcal || exercise.averageHeartRate) {
-        lines.push(`    节奏 ${exercise.tempo || '-'} / 距离 ${exercise.distanceKm || '-'} km / ` +
-          `热量 ${exercise.caloriesKcal || '-'} kcal / 心率 ${exercise.averageHeartRate || '-'} bpm`);
-      }
-    });
-    if (record.feeling.length > 0) {
-      lines.push(`  感受: ${record.feeling}`);
-    }
-    if (record.mediaUris.length > 0) {
-      lines.push(`  媒体附件: ${record.mediaUris.length} 个`);
-    }
-  });
-  return lines;
 }
 
 export class ExportService {
@@ -73,24 +45,29 @@ export class ExportService {
     const document = new pdfService.PdfDocument();
     let documentCreated = false;
     let documentReleased = false;
+    let stage = 'createDocument';
     try {
       if (!document.createDocument(595, 842)) {
         throw new Error('无法创建 PDF 文档');
       }
       documentCreated = true;
+      stage = 'configureFont';
       const font = new pdfService.FontInfo();
       font.fontName = 'HarmonyOS Sans SC';
+      font.fontPath = '/system/fonts/HarmonyOS_Sans_SC.ttf';
       const normal = new pdfService.TextStyle();
       normal.fontInfo = font;
       normal.textSize = 11;
-      normal.textColor = 0xFF20242C;
+      normal.textColor = 0x2C2420;
       const title = new pdfService.TextStyle();
       title.fontInfo = font;
       title.textSize = 18;
-      title.textColor = 0xFF20242C;
+      title.textColor = 0xFF6B17;
       title.isBold = true;
+      stage = 'getCoverPage';
       let page = document.getPage(0);
       try {
+        stage = 'drawCoverText';
         page.addTextObject('练刻 LIANKE', 42, 735, title);
         page.addTextObject('练就人生 · TRAIN WITH INTENT', 42, 700, normal);
         page.addTextObject(`报告范围  ${startDate || '最早记录'} — ${endDate || '最新记录'}`, 42, 650, normal);
@@ -100,7 +77,8 @@ export class ExportService {
         page.release();
         page = document.insertBlankPage(document.getPageCount(), 595, 842);
         let y = 800;
-        const lines = recordLines(records);
+        stage = 'drawRecordText';
+        const lines = buildPdfRecordLines(records);
         lines.forEach((line: string, index: number) => {
           if (y < 45) {
             page.release();
@@ -110,38 +88,49 @@ export class ExportService {
           page.addTextObject(line, 42, y, index === 0 ? title : normal);
           y -= index === 0 ? 34 : 20;
         });
+        stage = 'drawImages';
         let imageIndex = 0;
-        records.forEach((record: WorkoutRecord) => {
-          record.mediaUris.forEach((media: string) => {
+        for (let recordIndex = 0; recordIndex < records.length; recordIndex++) {
+          const mediaUris = records[recordIndex].mediaUris;
+          for (let mediaIndex = 0; mediaIndex < mediaUris.length; mediaIndex++) {
+            const media = mediaUris[mediaIndex];
             if (!media.startsWith('image|')) {
-              return;
+              continue;
             }
             try {
               const imagePath = this.copyImageToTemp(media.substring('image|'.length), imageIndex++);
               temporaryImages.push(imagePath);
-              if (y < 220) {
+              const layout = await this.fitImageToBox(imagePath, 511, 320);
+              if (y - layout.height < 45) {
                 page.release();
                 page = document.insertBlankPage(document.getPageCount(), 595, 842);
                 y = 800;
               }
-              page.addImageObject(imagePath, 42, y - 160, 240, 150);
-              y -= 175;
+              const x = (595 - layout.width) / 2;
+              page.addImageObject(imagePath, x, y - layout.height, layout.width, layout.height);
+              y -= layout.height + 20;
             } catch (error) {
               console.warn(`PDF image skipped: ${JSON.stringify(error)}`);
             }
-          });
-        });
+          }
+        }
       } finally {
         page.release();
       }
+      stage = 'saveTemporaryPdf';
       if (!document.saveDocument(temporaryPath)) {
         throw new Error('无法保存 PDF 文档');
       }
       document.releaseDocument();
       documentReleased = true;
+      stage = 'chooseDestination';
       const uri = await this.chooseDestination('Lianke-Records.pdf', 'PDF 文档|.pdf');
+      stage = 'copyToDestination';
       this.copyFileToDestination(temporaryPath, uri);
       return uri;
+    } catch (error) {
+      console.error(`PDF export failed at ${stage}: ${error}`);
+      throw new Error(`PDF 导出失败（${stage}）：${error}`);
     } finally {
       if (documentCreated && !documentReleased) {
         document.releaseDocument();
@@ -151,6 +140,18 @@ export class ExportService {
     }
   }
 
+  private async fitImageToBox(path: string, maxWidth: number, maxHeight: number): Promise<PdfImageLayout> {
+    const source = image.createImageSource(path);
+    try {
+      const info = source.getImageInfoSync();
+      if (info.size.width <= 0 || info.size.height <= 0) {
+        throw new Error('无法读取图片尺寸');
+      }
+      return fitPdfImageToBox(info.size.width, info.size.height, maxWidth, maxHeight);
+    } finally {
+      await source.release();
+    }
+  }
   private copyImageToTemp(uri: string, index: number): string {
     const lower = uri.toLowerCase();
     const suffix = lower.includes('.png') ? 'png' : lower.includes('.webp') ? 'webp' : 'jpg';
